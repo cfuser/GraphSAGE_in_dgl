@@ -1,11 +1,12 @@
 import csv
+from dgl.batch import unbatch
 import torch
 import dgl
 
 from dgl.data import dgl_dataset
 
-f = open('D:\subject\graduate\graph computation\data\offline\\train0.csv', 'r')
-reader = csv.reader(f)
+f_train = open('D:\subject\graduate\graph computation\data\offline\\train0.csv', 'r')
+reader = csv.reader(f_train)
 
 M = 79
 N = 152
@@ -22,7 +23,7 @@ user_features = []
 item_features = []
 labels = []
 labeled = []
-
+unlabeled = []
 _edge = 0
 for i in reader:
     #record.append(i)
@@ -37,6 +38,8 @@ for i in reader:
     temp['label'] = int(i[5])
     if (temp['label'] != -1):
         labeled.append(_edge)
+    else:
+        unlabeled.append(_edge)
     _edge = _edge + 1
     record.append(temp)
     if not(int(i[2]) in user):
@@ -276,6 +279,8 @@ item_features = g.nodes['item'].data['features']
 node_features = {'user': user_features, 'item': item_features}
 opt = torch.optim.Adam(model.parameters())
 epoch = 1000
+# epoch = 5
+
 _labels = [[1 - _, _] for _ in labels]
 # print(_labels)
 labels_tensor = torch.tensor(_labels)
@@ -284,23 +289,34 @@ for i in range(1, epoch + 1):
     res = model(g, {'user': user_features, 'item': item_features})
     dif = (res[labeled] - labels_tensor[labeled])
     
-    loss = (dif.mul(dif)).mean()
+    _res = res[labeled]
+    # print(_res)
+    _res_st = torch.max(_res, dim = 1)
+    
+    _res_indix = _res_st[0]
+    _res_value = _res_st[1]
+    _label = torch.tensor(labels)
+    _label = _label[labeled]
+    # print(_res.shape[0])
+    loss = - (torch.log(_res) * labels_tensor[labeled]).sum() / _res.shape[0]
+    loss = loss - (torch.log(res[unlabeled]) * res[unlabeled]).sum() / len(unlabeled)
+    # loss = - ((torch.log(_res) * labels_tensor[labeled]).sum() + (torch.log(res[unlabeled]) * res[unlabeled]).sum()) / _edge
+    # print(loss)
+    # loss = (dif.mul(dif)).mean()
+    
+    if (i % 50 == 0):
+        print("epoch " + str(i) + "/" + str(epoch) + " : loss = ", str(loss))
+        
+        print(_res_value)
+        print(_label)
+        # _label = labels[labeled]
+        auc = (_res_value == _label).sum()
+        print("auc : " + str(auc.item()) + "/" + str(len(labeled)))
+        # exit()
+    
     opt.zero_grad()
     loss.backward()
     opt.step()
-    if (i % 5 == 0):
-        print("epoch " + str(i) + "/" + str(epoch) + " : loss = ", str(loss))
-        _res = res[labeled]
-        _res = torch.max(_res, dim = 1)
-        _res = _res[1]
-        _label = torch.tensor(labels)
-        _label = _label[labeled]
-        print(_res)
-        print(_label)
-        # _label = labels[labeled]
-        auc = (_res == _label).sum()
-        print("auc : " + str(auc.item()) + "/" + str(len(labeled)))
-        # exit()
     # print(res)
     # print(labels[0])
     # print(labels[1])
@@ -317,3 +333,149 @@ print(h_user)
 print()
 print(h_item)
 '''
+
+# predict_0.csv
+pass
+f_predict = open('D:\subject\graduate\graph computation\data\offline\\predict0.csv', 'r')
+predict_reader = csv.reader(f_predict)
+
+predict_record = []
+predict_node_num = 0
+predict_user = {}
+predict_item = {}
+
+predict_features = []
+predict_user_features = []
+predict_item_features = []
+predict_labels = []
+predict_uuids = []
+for i in predict_reader:
+    temp = {}
+    temp['uuid'] = int(i[0])
+    predict_uuids.append(int(i[0]))
+    temp['visit_time'] = int(i[1])
+    temp['user_id'] = int(i[2])
+    temp['item_id'] = int(i[3])
+    features = i[4].split()
+    features = [float(_) for _ in features]
+    temp['features'] = features
+    # temp['label'] = int(i[5])
+    predict_record.append(temp)
+    if not(int(i[2]) in predict_user):
+        predict_user[int(i[2])] = predict_node_num
+        predict_node_num = predict_node_num + 1
+        predict_user_features.append(features[M:])
+    else:
+        # detect whether the feature of user if same or not
+        pass
+
+predict_uuids = torch.tensor(predict_uuids)
+predict_user_idx_begin = 0
+predict_item_idx_begin = predict_node_num
+
+predict_link = [[], []]
+for i in predict_record:
+    if (not(i['item_id']) in predict_item):
+        predict_item[i['item_id']] = predict_node_num
+        predict_node_num = predict_node_num + 1
+        predict_item_features.append(i['features'][:M])
+    else:
+        # detect whether the features of item is same or not
+        pass
+    
+    predict_link[0].append(predict_user[i['user_id']])
+    predict_link[1].append(predict_item[i['item_id']] - predict_item_idx_begin)
+
+predict_link_tensor = torch.tensor(predict_link)
+
+predict_graph_data = {('user', 'evaluate', 'item'): (predict_link_tensor[0], predict_link_tensor[1]),
+                        ('item', 'evaluated', 'user'): (predict_link_tensor[1], predict_link_tensor[0])
+                        }
+
+predict_g = dgl.heterograph(predict_graph_data)
+print(predict_g)
+
+# process data to normalize
+number_user_features = 73
+number_item_features = 152 - number_user_features
+# print(torch.tensor(user_features))
+predict_min = torch.min(torch.tensor(predict_user_features), dim = 0)
+predict_max = torch.max(torch.tensor(predict_user_features), dim = 0)
+# print(_min)
+# print(_max)
+predict_dif = predict_max[0] - predict_min[0]
+predict_nonzero_idx = torch.nonzero(predict_dif == 0)
+
+# torch.set_printoptions(precision=8)
+
+# print(_dif)
+# print(_nonzero_idx)
+predict_dif[predict_nonzero_idx] = 1
+# print(_dif)
+predict_temp = (torch.tensor(predict_user_features) - predict_min[0]) / predict_dif
+predict_user_features = predict_temp.numpy().tolist()
+# print((torch.tensor(user_features) - _min[0]) / _dif)
+# _max = torch.max(_temp, dim = 0)
+# print(_max)
+predict_min = torch.min(torch.tensor(predict_item_features), dim = 0)
+predict_max = torch.max(torch.tensor(predict_item_features), dim = 0)
+predict_dif = predict_max[0] - predict_min[0]
+predict_nonzero_idx = torch.nonzero(predict_dif == 0)
+predict_dif[predict_nonzero_idx] = 1
+predict_temp = (torch.tensor(predict_item_features) - predict_min[0]) / predict_dif
+predict_item_features = predict_temp.numpy().tolist()
+
+
+print(torch.tensor(predict_user_features).size())
+print(torch.tensor(predict_item_features).size())
+predict_g.nodes['user'].data['features'] = torch.tensor(predict_user_features)
+predict_g.nodes['item'].data['features'] = torch.tensor(predict_item_features)
+
+print(predict_g)
+print(predict_g.nodes['user'].data['features'])
+print(predict_g.etypes)
+
+predict_user_features = predict_g.nodes['user'].data['features']
+predict_item_features = predict_g.nodes['item'].data['features']
+
+predict_node_features = {'user': predict_user_features, 'item': predict_item_features}
+
+predict_res = model(predict_g, predict_node_features)
+print(predict_res)
+print(predict_res.shape)
+
+predict_res_st = torch.max(predict_res, dim = 1)
+predict_res_indix = predict_res_st[0]
+predict_res_value = predict_res_st[1]
+
+# truth.csv
+f_truth = open('D:\subject\graduate\graph computation\data\offline\\truth.csv', 'r')
+truth_reader = csv.reader(f_truth)
+truth_uuids = []
+truth_labels = []
+for i in truth_reader:
+    truth_uuids.append(int(i[0]))
+    truth_labels.append(int(i[1]))
+
+truth_uuids = torch.tensor(truth_uuids)
+truth_labels = torch.tensor(truth_labels)
+
+file_handle = open('predict_res.txt', 'w')
+x = predict_res_value.numpy()
+x = x.tolist()
+strNums = [str(_) for _ in x]
+str1 = "\n".join(strNums)
+file_handle.write(str1)
+file_handle.close()
+
+file_handle = open('predict_value.txt', 'w')
+strNums = [str(_[1].detach().item()) for _ in predict_res]
+str2 = "\n".join(strNums)
+file_handle.write(str2)
+file_handle.close()
+
+_truth_labels = [truth_labels[_ - 1] for _ in predict_uuids]
+_truth_labels = torch.tensor(_truth_labels)
+predict_auc = (_truth_labels == predict_res_value).sum()
+print("predict auc : " + str(predict_auc.item()) + "/" + str(len(predict_record)))
+
