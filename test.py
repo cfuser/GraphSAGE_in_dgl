@@ -5,11 +5,12 @@ import dgl
 
 from dgl.data import dgl_dataset
 
-f_train = open('D:\subject\graduate\graph computation\data\offline\\train0.csv', 'r')
+# f_train = open('D:\subject\graduate\graph computation\data\offline\\train0.csv', 'r')
+f_train = open('D:\subject\graduate\graph computation\data\offline\predata\\train.csv', 'r')
 reader = csv.reader(f_train)
 
-M = 79
-N = 152
+M = 32 # 79
+N = 75 # 152
 
 record = []
 
@@ -77,11 +78,31 @@ graph_data = {('user', 'evaluate', 'item'): (link_tensor[0], link_tensor[1]),
                 ('item', 'evaluated', 'user'): (link_tensor[1], link_tensor[0])
                 }
 g = dgl.heterograph(graph_data)
+'''
+_seq = 0
+for i in record:
+    _id = g.edge_ids(user[i['user_id']], item[i['item_id']] - item_idx_begin, etype = 'evaluate')
+    if (_id != _seq):
+        print(_id, _seq)
+        print('unequal')
+        exit()
+    else:
+        pass
+        # print(_seq, _id)
+    _seq = _seq + 1
+print('---')
+print(link_tensor)
+print(link_tensor.size())
+print(g.edges(etype = 'evaluated'))
+print(g.edge_ids(link_tensor[1], link_tensor[0], etype = 'evaluated'))
+_ = g.edge_ids(link_tensor[0], link_tensor[1], etype = 'evaluate')
+print(_[96], _[97], _[98])
+'''
 print(g)
 
 
-number_user_features = 73
-number_item_features = 152 - number_user_features
+number_user_features = N - M
+number_item_features = N - number_user_features
 # print(torch.tensor(user_features))
 _min = torch.min(torch.tensor(user_features), dim = 0)
 _max = torch.max(torch.tensor(user_features), dim = 0)
@@ -299,7 +320,8 @@ for i in range(1, epoch + 1):
     _label = _label[labeled]
     # print(_res.shape[0])
     loss = - (torch.log(_res) * labels_tensor[labeled]).sum() / _res.shape[0]
-    loss = loss - (torch.log(res[unlabeled]) * res[unlabeled]).sum() / len(unlabeled)
+    if (len(unlabeled)):
+        loss = loss - (torch.log(res[unlabeled]) * res[unlabeled]).sum() / len(unlabeled)
     # loss = - ((torch.log(_res) * labels_tensor[labeled]).sum() + (torch.log(res[unlabeled]) * res[unlabeled]).sum()) / _edge
     # print(loss)
     # loss = (dif.mul(dif)).mean()
@@ -310,8 +332,8 @@ for i in range(1, epoch + 1):
         print(_res_value)
         print(_label)
         # _label = labels[labeled]
-        auc = (_res_value == _label).sum()
-        print("auc : " + str(auc.item()) + "/" + str(len(labeled)))
+        acc = (_res_value == _label).sum()
+        print("acc : " + str(acc.item()) + "/" + str(len(labeled)))
         # exit()
     
     opt.zero_grad()
@@ -336,7 +358,8 @@ print(h_item)
 
 # predict_0.csv
 pass
-f_predict = open('D:\subject\graduate\graph computation\data\offline\\predict0.csv', 'r')
+# f_predict = open('D:\subject\graduate\graph computation\data\offline\\predict0.csv', 'r')
+f_predict = open('D:\subject\graduate\graph computation\data\offline\predata\\predict.csv', 'r')
 predict_reader = csv.reader(f_predict)
 
 predict_record = []
@@ -396,8 +419,8 @@ predict_g = dgl.heterograph(predict_graph_data)
 print(predict_g)
 
 # process data to normalize
-number_user_features = 73
-number_item_features = 152 - number_user_features
+number_user_features = N - M
+number_item_features = N - number_user_features
 # print(torch.tensor(user_features))
 predict_min = torch.min(torch.tensor(predict_user_features), dim = 0)
 predict_max = torch.max(torch.tensor(predict_user_features), dim = 0)
@@ -449,7 +472,8 @@ predict_res_indix = predict_res_st[0]
 predict_res_value = predict_res_st[1]
 
 # truth.csv
-f_truth = open('D:\subject\graduate\graph computation\data\offline\\truth.csv', 'r')
+# f_truth = open('D:\subject\graduate\graph computation\data\offline\\truth.csv', 'r')
+f_truth = open('D:\subject\graduate\graph computation\data\offline\predata\\truth.csv', 'r')
 truth_reader = csv.reader(f_truth)
 truth_uuids = []
 truth_labels = []
@@ -476,6 +500,6 @@ file_handle.close()
 
 _truth_labels = [truth_labels[_ - 1] for _ in predict_uuids]
 _truth_labels = torch.tensor(_truth_labels)
-predict_auc = (_truth_labels == predict_res_value).sum()
-print("predict auc : " + str(predict_auc.item()) + "/" + str(len(predict_record)))
+predict_acc = (_truth_labels == predict_res_value).sum()
+print("predict acc : " + str(predict_acc.item()) + "/" + str(len(predict_record)))
 

@@ -2,11 +2,13 @@ import csv
 from dgl.batch import unbatch
 import torch
 import dgl
-
+import numpy as np
 from dgl.data import dgl_dataset
+import sklearn.metrics
 
+path = 'D:\subject\graduate\graph computation\data\offline\predata\\'
 # f_train = open('D:\subject\graduate\graph computation\data\offline\\train0.csv', 'r')
-f_train = open('D:\subject\graduate\graph computation\data\offline\predata\\train.csv', 'r')
+f_train = open(path + 'train.csv', 'r')
 reader = csv.reader(f_train)
 
 M = 32 # 79
@@ -110,7 +112,6 @@ _nonzero_idx = torch.nonzero(_dif == 0)
 _dif[_nonzero_idx] = 1
 _temp = (torch.tensor(item_features) - _min[0]) / _dif
 item_features = _temp.numpy().tolist()
-
 for i in range(number_user_features):
     pass
 
@@ -172,12 +173,21 @@ class MLPPredictor(nn.Module):
         # print(_features.size())
         # print(_features)
         score = self.W(torch.cat([features_u, features_v], dim = 1))
+        if i % 50 == 0:
+            print(_features)
+            print(score)
         return {'score': score}
 
     def forward(self, graph, h):
         with graph.local_scope():
             graph.nodes['user'].data['user_features'] = h['user']
             graph.nodes['item'].data['item_features'] = h['item']
+            '''
+            if i % 50 == 0:
+                print('---')
+                print(graph.edges())
+                print()
+            '''
             # print('---')
             # print(graph)
             # print(graph.nodes['user'].data['user_features'])
@@ -215,7 +225,7 @@ class GraphSAGE(nn.Module):
         # self.conv3 = GraphSAGE(h_feats_1, h_feats_1, 'mean')
         # self.conv4 = GraphSAGE(h_feats_1, h_feats_1, 'mean')
         
-        self.pred = MLPPredictor(h_feats_0, h_feats_1, len(rel_names))
+        self.pred = MLPPredictor(h_feats_0, h_feats_1, 2)
         # user
         self.conv0 = dglnn.GraphConv(h_feats_0, h_feats_0)
         # item
@@ -228,7 +238,8 @@ class GraphSAGE(nn.Module):
         # self.conv3 = dglnn.GraphConv(in_feats, h_feats_1)
         self.conv2 = torch.nn.Linear(in_feats, h_feats_0)
         self.conv3 = torch.nn.Linear(in_feats, h_feats_1)
-
+        self.conv4 = torch.nn.Linear(in_feats, h_feats_0)
+        self.conv5 = torch.nn.Linear(in_feats, h_feats_1)
         '''
         self.conv1 = nn.HeteroGraphConv({
             rel: nn.GraphConv(in_feats, h_feats_0)
@@ -245,15 +256,36 @@ class GraphSAGE(nn.Module):
             # print(inputs)
             # print(inputs['user'].size())
             # print(inputs['item'].size())
-            h = self.CONV0(g, inputs)
-            h = {k: F.relu(v) for k, v in h.items()}
-            # print(h)
-            # print(h['user'].size())
-            # print(h['item'].size())
-            _cat = {'user': torch.cat([inputs['user'], h['user']], dim = 1), 'item': torch.cat([inputs['item'], h['item']], dim = 1)}
-            _temp = {}
-            _temp['user'] = self.conv2(_cat['user'])
-            _temp['item'] = self.conv3(_cat['item'])
+            # h = self.CONV0(g, inputs)
+            for k in range(2):
+                g.multi_update_all({'evaluate': (fn.copy_u('features', 'm'), fn.mean('m', 'h')),
+                                    'evaluated': (fn.copy_u('features', 'm'), fn.mean('m', 'h'))},
+                                    'sum')
+                h = g.ndata['h']
+                # print(g.nodes['user'].data['h'].size())
+                # print(g.nodes['item'].data['h'].size())
+                '''
+                if i % 50 == 0:
+                    print('h:\n', h)
+                h = {k: F.relu(v) for k, v in h.items()}
+                '''
+                # print(h)
+                # print(h['user'].size())
+                # print(h['item'].size())
+                _cat = {'user': torch.cat([g.nodes['user'].data['features'], h['user']], dim = 1), 'item': torch.cat([g.nodes['item'].data['features'], h['item']], dim = 1)}
+                _temp = {}
+                if k == 0:
+                    _temp['user'] = self.conv2(_cat['user'])
+                    _temp['item'] = self.conv3(_cat['item'])
+                else:
+                    _temp['user'] = self.conv4(_cat['user'])
+                    _temp['item'] = self.conv5(_cat['item'])
+                if i % 50 == 0:
+                    print('cat ', _cat)
+                    print('_temp ', _temp)
+                # _temp = {key: _temp[key].cuda() for key in _temp}
+                # if (k == 0): _temp = {k: F.relu(v) for k, v in _temp.items()}
+                g.ndata['features'] = _temp
             # print(_temp)
             # print(_temp['user'].size())
             '''
@@ -266,13 +298,14 @@ class GraphSAGE(nn.Module):
             # print(dec_graph)
             res = self.pred(dec_graph, _temp)
             # print(res)
+            return res
             res = torch.softmax(res, dim = 1)
             # print(res)
             return res
             return _temp
 
 
-model = GraphSAGE(number_user_features + number_item_features, number_user_features, number_item_features, g.etypes)
+model = GraphSAGE(number_user_features + number_item_features, number_user_features, number_item_features, 2)
 model.cuda()
 user_features = g.nodes['user'].data['features'].to('cuda:0')
 item_features = g.nodes['item'].data['features'].to('cuda:0')
@@ -281,23 +314,28 @@ item_features = g.nodes['item'].data['features'].to('cuda:0')
 node_features = {'user': user_features, 'item': item_features}
 node_features = {key:node_features[key].cuda() for key in node_features}
 opt = torch.optim.Adam(model.parameters())
-epoch = 1000
+print('input number of epoch: ')
+epoch = int(input())
 # epoch = 5
 
 _labels = [[1 - _, _] for _ in labels]
 # print(_labels)
 labels_tensor = torch.tensor(_labels)
 res = []
+i = 0
 for i in range(1, epoch + 1):
-    res = model(g, {'user': user_features, 'item': item_features})
+    res = model(g, node_features)
+    if (i % 50 == 0):
+        print('epoch ' + str(i) + '/' + str(epoch) + ' : res = ')
+        print(res)
+    res = torch.softmax(res, dim = 1)
     dif = (res[labeled].to('cuda:0') - labels_tensor[labeled].to('cuda:0'))
     
     _res = res[labeled]
     # print(_res)
     _res_st = torch.max(_res, dim = 1)
-    
-    _res_indix = _res_st[0]
-    _res_value = _res_st[1]
+    _res_value = _res_st[0]
+    _res_indix = _res_st[1]
     _label = torch.tensor(labels)
     _label = _label[labeled]
     # print(_res.shape[0])
@@ -311,11 +349,17 @@ for i in range(1, epoch + 1):
     if (i % 50 == 0):
         print("epoch " + str(i) + "/" + str(epoch) + " : loss = ", str(loss))
         
-        print(_res_value)
+        print(_res_indix)
         print(_label)
         # _label = labels[labeled]
-        acc = (_res_value.to('cuda:0') == _label.to('cuda:0')).sum()
+        acc = (_res_indix.to('cuda:0') == _label.to('cuda:0')).sum()
         print("acc : " + str(acc.item()) + "/" + str(len(labeled)))
+        y = _label
+        preds = np.array(res.detach().cpu()[:, 1])
+        fpr, tpr, thresholds = sklearn.metrics.roc_curve(y, preds, pos_label = 1)
+        auc = sklearn.metrics.roc_auc_score(y, preds)
+        print('auc:', auc)
+        print()
         # exit()
     
     opt.zero_grad()
@@ -341,7 +385,7 @@ print(h_item)
 # predict_0.csv
 pass
 # f_predict = open('D:\subject\graduate\graph computation\data\offline\\predict0.csv', 'r')
-f_predict = open('D:\subject\graduate\graph computation\data\offline\predata\\predict.csv', 'r')
+f_predict = open(path + 'predict.csv', 'r')
 predict_reader = csv.reader(f_predict)
 
 predict_record = []
@@ -445,17 +489,18 @@ predict_item_features = predict_g.nodes['item'].data['features'].to('cuda:0')
 predict_node_features = {'user': predict_user_features, 'item': predict_item_features}
 
 predict_g = predict_g.to('cuda:0')
+i = 0
 predict_res = model(predict_g, predict_node_features)
 print(predict_res)
 print(predict_res.shape)
 
 predict_res_st = torch.max(predict_res, dim = 1)
-predict_res_indix = predict_res_st[0]
-predict_res_value = predict_res_st[1]
+predict_res_value = predict_res_st[0]
+predict_res_indix = predict_res_st[1]
 
 # truth.csv
 # f_truth = open('D:\subject\graduate\graph computation\data\offline\\truth.csv', 'r')
-f_truth = open('D:\subject\graduate\graph computation\data\offline\predata\\truth.csv', 'r')
+f_truth = open(path + 'truth.csv', 'r')
 truth_reader = csv.reader(f_truth)
 truth_uuids = []
 truth_labels = []
@@ -467,7 +512,7 @@ truth_uuids = torch.tensor(truth_uuids)
 truth_labels = torch.tensor(truth_labels)
 
 file_handle = open('predict_res.txt', 'w')
-x = predict_res_value.cpu().numpy()
+x = predict_res_indix.cpu().numpy()
 x = x.tolist()
 strNums = [str(_) for _ in x]
 str1 = "\n".join(strNums)
@@ -482,6 +527,11 @@ file_handle.close()
 
 _truth_labels = [truth_labels[_ - 1] for _ in predict_uuids]
 _truth_labels = torch.tensor(_truth_labels)
-predict_acc = (_truth_labels.to('cuda:0') == predict_res_value.to('cuda:0')).sum()
+predict_acc = (_truth_labels.to('cuda:0') == predict_res_indix.to('cuda:0')).sum()
 print("predict acc : " + str(predict_acc.item()) + "/" + str(len(predict_record)))
 
+y = np.array(truth_labels)
+preds = np.array(predict_res.detach().cpu()[:, 1])
+fpr, tpr, thresholds = sklearn.metrics.roc_curve(y, preds, pos_label = 1)
+auc = sklearn.metrics.roc_auc_score(y, preds)
+print('auc:', auc)

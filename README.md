@@ -29,6 +29,10 @@ code learning:
 
 1. Are we really making much progress? Revisiting, benchmarking, and refining heterogeneous graph neural networks
 
+Work To Do:
+
+1. change the function of aggregation. In the code, we use a GraphConv layer, however, it should be delivered in message
+
 ---
 code link: https://github.com/cfuser/GraphSAGE_in_dgl
 
@@ -71,3 +75,7 @@ Bug List:
 1. multiedge in preliminary contest train set, like 46 98, which should be removed
 2. the label sequence and train sequence is not identical
 3. loss function and jump to nan, it's in the process of self.W, need more information
+
+Unknown:
+
+1. expand_as_pair, how it works? I have known that it returns two input features, but why we need it?
