@@ -73,7 +73,6 @@ Work To Do
 Bug List:
 
 1. multiedge in preliminary contest train set, like 46 98, which should be removed
-2. the label sequence and train sequence is not identical
 3. loss function and jump to nan, it's in the process of self.W, need more information
 
 Unknown:
