@@ -127,7 +127,7 @@ class GraphSAGE(torch.nn.Module):
                     # print('_temp ', _temp)
                     # print('_temp max', max(_temp[k].max() for k in _temp))
                     pass
-                _temp = {key: _temp[key].cuda() for key in _temp}
+                # _temp = {key: _temp[key].cuda() for key in _temp}
                 if (k == 0): _temp = {k: torch.nn.functional.relu(v) for k, v in _temp.items()}
                 g.ndata['features'] = _temp
             # print(_temp)

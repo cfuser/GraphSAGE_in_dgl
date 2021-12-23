@@ -5,12 +5,15 @@ import sklearn.metrics
 import numpy
 
 # graph load and model defintion
+print("input calculation device:\n1. cpu\n2. cuda\nplease inpput like 'cpu' or 'cuda:0'")
+device = input()
+print("You choose the", device)
 path = 'D:/subject/graduate/graph computation/data/offline/predata/'
 graph = dgl.load_graphs(path + 'data.bin')
 # print(graph)
 number_user_features = graph[0][0].nodes['user'].data['features'].size()[1]
 number_item_features = graph[0][0].nodes['item'].data['features'].size()[1]
-graph[0][0] = graph[0][0].to('cuda:0')
+graph[0][0] = graph[0][0].to(device)
 labels = graph[0][0].edges['evaluate'].data['label']
 labels = labels.float()
 labeled = (labels != -1).nonzero()
@@ -23,7 +26,7 @@ unlabeled = unlabeled.squeeze(1)
 # print(unlabeled)
 
 model = model.GraphSAGE(number_user_features + number_item_features, number_user_features, number_item_features, 2)
-model.to('cuda:0')
+model = model.to(device)
 
 # train
 
@@ -57,7 +60,7 @@ for i in range(1, epoch + 1):
         print(_res_indix)
         print(_label)
         # _label = labels[labeled]
-        acc = (_res_indix.to('cuda:0') == _label.to('cuda:0')).sum()
+        acc = (_res_indix.to(device) == _label.to(device)).sum()
         print("acc : " + str(acc.item()) + "/" + str(len(labeled)))
         y = _label.to('cpu')
         preds = numpy.array(res.detach().cpu()[:, 1])
