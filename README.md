@@ -9,6 +9,12 @@ We change some details.
 1.  Firstly, we aggregate the features of neighbor nodes, then concatenate with self nodes. Next we use an MLP to get features of the same size as self nodes. It's called one layer of **new GraphSAGE**. We have two **new GraphSAGE** in our model.
 2.  In paper, **GraphSAGE** is used to node classification and supervised. While our target is to link classification and semi-supervised. For former problem, we concatenate the features of nodes with unidirectional edge, and use an MLP to a two classification problem. For latter problem, we temporarily use supervised loss function. **Work to do**
 
+code:
+
+1. We have divided the code in four parts, graph_preprocess.py, model.py, train.py, predict.py
+2. graph_preprocess.py stores in data.bin
+3. the model after training stores in model.pkl
+4. running order: train.py, predict.py
 
 result:
 test.py without gpu
